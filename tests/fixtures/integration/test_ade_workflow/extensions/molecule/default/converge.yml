@@ -1,0 +1,13 @@
+---
+- name: Converge
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Run the collection module
+      test_ns.test_col.hello:
+      register: greeting
+
+    - name: Check the collection module result
+      ansible.builtin.assert:
+        that:
+          - greeting.msg == "Hello from test_ns.test_col"

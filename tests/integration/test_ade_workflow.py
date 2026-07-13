@@ -277,3 +277,101 @@ def test_ade_workflow_e2e(
     assert (collection_dir / ".tox" / env_name / ".coverage").is_file()
     assert not (collection_dir / ".coverage").exists()
     assert not (collection_dir / ".coveragerc").exists()
+
+
+@pytest.mark.slow
+def test_molecule_workflow_e2e(
+    module_fixture_dir: Path,
+    tmp_path: Path,
+) -> None:
+    """Run Molecule directly through a generated integration environment."""
+    repo_root = Path(__file__).resolve().parents[2]
+    collection_dir = tmp_path / "collection"
+    shutil.copytree(module_fixture_dir, collection_dir)
+    venv_dir = tmp_path / "venv"
+    subprocess.run(
+        [sys.executable, "-m", "venv", str(venv_dir)],
+        check=True,
+        capture_output=True,
+    )
+    pip = str(venv_dir / "bin" / "pip")
+    tox_bin = str(venv_dir / "bin" / "tox")
+    subprocess.run(
+        [pip, "install", "tox", "-e", str(repo_root)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    py_minor = sys.version_info.minor
+    py_ver = f"{sys.version_info.major}.{py_minor}"
+    core_ver = {10: "2.17", 11: "2.19", 12: "2.19", 13: "2.19", 14: "2.20"}.get(
+        py_minor,
+        "2.19",
+    )
+    env_name = f"integration-py{py_ver}-{core_ver}"
+
+    proc = subprocess.run(
+        [
+            tox_bin,
+            "--ansible",
+            "--conf",
+            "tox-ansible.ini",
+            "-e",
+            env_name,
+        ],
+        check=False,
+        cwd=collection_dir,
+        capture_output=True,
+        text=True,
+    )
+
+    output = f"{proc.stdout}\n{proc.stderr}"
+    assert proc.returncode == 0, f"tox run failed:\n{output}"
+    assert "Run the collection module" in output
+    assert "Molecule executed 1 scenario (1 successful)" in output
+    assert "python3 -m pytest" not in output
+    assert "test --all" in output
+    generated_config = collection_dir / f".tox/.tox-ansible/molecule/{env_name}.yml"
+    assert generated_config.read_text() == "---\nprerun: false\n"
+    integration_python = collection_dir / f".tox/{env_name}/bin/python"
+    requirement_check = subprocess.run(
+        [integration_python, "-c", "import tomli_w"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert requirement_check.returncode == 0, requirement_check.stderr
+
+    selected_proc = subprocess.run(
+        [
+            tox_bin,
+            "--ansible",
+            "--conf",
+            "tox-ansible.ini",
+            "-e",
+            env_name,
+            "--",
+            "-s",
+            "default",
+        ],
+        check=False,
+        cwd=collection_dir,
+        capture_output=True,
+        text=True,
+    )
+    selected_output = f"{selected_proc.stdout}\n{selected_proc.stderr}"
+    assert selected_proc.returncode == 0, selected_output
+    assert "test -s default" in selected_output
+    assert "test --all" not in selected_output
+
+    shutil.rmtree(collection_dir / "extensions/molecule/default")
+    no_scenario_proc = subprocess.run(
+        [tox_bin, "--ansible", "--conf", "tox-ansible.ini", "-e", env_name],
+        check=False,
+        cwd=collection_dir,
+        capture_output=True,
+        text=True,
+    )
+    no_scenario_output = f"{no_scenario_proc.stdout}\n{no_scenario_proc.stderr}"
+    assert no_scenario_proc.returncode != 0
+    assert "scenario" in no_scenario_output.lower()

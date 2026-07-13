@@ -1,0 +1,13 @@
+---
+driver:
+  name: default
+  options:
+    managed: false
+    ansible_connection_options:
+      ansible_connection: local
+platforms:
+  - name: instance
+scenario:
+  test_sequence:
+    - converge
+    - verify
