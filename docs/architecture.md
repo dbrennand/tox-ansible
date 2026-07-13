@@ -27,7 +27,7 @@ When `tox-ansible` sets up a test environment (e.g. `unit-py3.13-2.19`), it runs
 1. **tox** creates the virtual environment and installs dependencies (including ade itself).
 2. **tox-ansible** calls `ade install` in `commands_pre` to install the collection and ansible-core.
 3. **ade** installs the requested ansible-core version, builds and installs the collection from the current directory, discovers Python dependencies via `ansible-builder introspect`, and installs them.
-4. **tox-ansible** runs the test command (`pytest` or `ansible-test sanity`).
+4. **tox-ansible** runs the test command (`pytest`, Molecule, or `ansible-test sanity`).
 
 ## Roles and responsibilities
 
@@ -38,7 +38,7 @@ When `tox-ansible` sets up a test environment (e.g. `unit-py3.13-2.19`), it runs
 - **Test matrix**: Generates the Python version x Ansible version matrix (`py3.13-2.19`, `py3.12-devel`, etc.)
 - **GitHub Actions integration**: Produces JSON matrix output for CI workflows via `--gh-matrix`
 - **Environment configuration**: Sets up each tox env with the right dependencies, environment variables, and commands
-- **Test commands**: Configures `pytest` for unit/integration tests, `ansible-test sanity` for sanity tests, and `galaxy-importer` for galaxy tests
+- **Test commands**: Configures `pytest` for unit tests, Molecule for integration scenarios, `ansible-test sanity` for sanity tests, and `galaxy-importer` for galaxy tests
 - **Skip/filter**: Allows users to skip specific Ansible versions via `skip` in `[tool.tox-ansible]` (pyproject.toml) or `[ansible]` (tox-ansible.ini)
 - **Pre-test setup**: Delegates to ade with a single `ade install` call
 

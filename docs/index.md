@@ -8,7 +8,7 @@
 
 Implemented as `tox` plugin, `tox-ansible` provides a simple way to test ansible content collections across multiple python interpreter and ansible versions.
 
-`tox-ansible` uses familiar python testing tools to perform the actual testing. It uses `tox` to create and manage the testing environments, `ansible-test sanity` to run the sanity tests, and `pytest` to run the unit and integration tests. This eliminated the black box nature of other approaches and allows for more control over the testing process.
+`tox-ansible` uses `tox` to create and manage testing environments, `ansible-test sanity` to run sanity tests, `pytest` to run unit tests, and Molecule to run integration scenarios.
 
 When used on a local development system, each of the environments are left intact after a test run. This allows for easy debugging of failed tests for a given test type, python interpreter and ansible version.
 

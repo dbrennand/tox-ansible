@@ -119,9 +119,9 @@ A list of dynamically generated Ansible environments will be displayed specifica
 
     See the [Configuration](configuration.md) page for details on both approaches.
 
-## Passing command line arguments to ansible-test / pytest
+## Passing command line arguments to test runners
 
-The behavior of the `ansible-test` (for `sanity-*` environments) or `pytest` (for `unit-*` and `integration-*` environments) commands can be customized by passing further command line arguments to it, e.g., by invoking `tox` like this:
+Arguments after `--` are forwarded to the environment's runner: `ansible-test` for `sanity-*`, pytest for `unit-*`, and Molecule for `integration-*`.
 
 ```bash
 tox -f sanity --ansible -- --test validate-modules -vvv
@@ -129,10 +129,22 @@ tox -f sanity --ansible -- --test validate-modules -vvv
 
 The arguments after the `--` will be passed to the `ansible-test` command. Thus in this example, only the `validate-modules` sanity test will run, but with an increased verbosity.
 
-Same can be done to pass arguments to the `pytest` commands for the `unit-*` and `integration-*` environments:
+The same applies to pytest unit environments:
 
 ```bash
 tox -e unit-py3.13-2.19 --ansible -- --junit-xml=tests/output/junit/unit.xml
+```
+
+Molecule options retain their original order. All scenarios run by default, including when options such as `--workers` are supplied:
+
+```bash
+tox -e integration-py3.13-2.19 --ansible -- --workers 4
+```
+
+Select scenarios with `-s` or `--scenario-name`; an explicit selection replaces the default `--all`:
+
+```bash
+tox -e integration-py3.13-2.19 --ansible -- -s default
 ```
 
 ## Unit test coverage
@@ -219,73 +231,28 @@ skip =
     sanity-py3.13
 ```
 
-## Testing molecule scenarios
+## Testing Molecule scenarios
 
-Although the `tox-ansible` plugin does not have functionality specific to molecule, it can be a powerful tool to run `molecule` scenarios across a matrix of Ansible and Python versions.
+Every `integration-*` environment invokes Molecule directly. One tox environment covers every scenario that Molecule discovers through its collection-aware `extensions/molecule/` layout; Molecule remains authoritative for discovery, ordering, shared state, concurrency, and failures. If no scenarios are found, the environment fails with Molecule's diagnostic.
 
-This can be accomplished by presenting molecule scenarios as integration tests available through `pytest` using the [pytest-ansible](https://github.com/ansible-community/pytest-ansible) plugin, which is installed when `tox-ansible` is installed.
+Before Molecule runs, ADE installs the collection and Ansible collection dependencies. Tox-ansible therefore generates an environment-specific base configuration under `.tox/.tox-ansible/molecule/` containing:
 
-Assuming the following collection directory structure:
-
-```bash
-namespace.name
-├── extensions
-│   ├── molecule
-│   │   ├── playbook
-│   │   │   ├── create.yml
-│   │   │   ├── converge.yml
-│   │   │   ├── molecule.yml
-│   │   │   └── verify.yml
-│   │   ├── plugins
-│   │   │   ├── create.yml
-│   │   │   ├── converge.yml
-│   │   │   ├── molecule.yml
-│   │   │   └── verify.yml
-│   │   ├── targets
-│   │   │   ├── create.yml
-│   │   │   ├── converge.yml
-│   │   │   ├── molecule.yml
-│   │   │   └── verify.yml
-├── playbooks
-│   └── site.yaml
-├── plugins
-│   ├── action
-│   │   └── action_plugin.py
-│   ├── modules
-│   │   └── module.py
-├── tests
-│   ├── integration
-│   │   │── targets
-│   │   │   ├── success
-│   │   │   │   └── tasks
-│   │   │   │       └── main.yaml
-│   │   └── test_integration.py
-├── pyproject.toml
-└── galaxy.yml
+```yaml
+---
+prerun: false
 ```
 
-Individual `molecule` scenarios can be added to the collection's extension directory to test playbooks, roles, and integration targets.
+This avoids duplicating ADE's installation work. A scenario can explicitly set `prerun: true`; scenario configuration has higher precedence and may intentionally repeat that work. Existing Molecule base configuration is preserved using Molecule's normal priority: repository `.config/molecule/config.yml`, collection `extensions/molecule/config.yml`, then user `~/.config/molecule/config.yml`.
 
-In order to present each `molecule` scenario as an individual `pytest` test a new `helper` file is added.
+Use the following dependency files for integration tests:
 
-```python
-# tests/integration/test_integration.py
+- `tests/integration/requirements.yml` for Ansible collections.
+- `tests/integration/requirements.txt` for Python packages, including Molecule drivers and verifier packages.
 
-"""Tests for molecule scenarios."""
-from __future__ import absolute_import, division, print_function
+Tox-ansible installs Molecule automatically but does not inspect `molecule.yml` to infer optional driver packages. For example, a Docker scenario should declare `molecule-plugins[docker]` in `tests/integration/requirements.txt`.
 
-from pytest_ansible.molecule import MoleculeScenario
+### Migrating from the pytest adapter
 
+The `pytest_ansible.molecule.MoleculeScenario` adapter test previously recommended by tox-ansible is no longer needed for integration environments. Remove that adapter test and keep the scenarios under `extensions/molecule/`; Molecule will discover and execute them directly.
 
-def test_integration(molecule_scenario: MoleculeScenario) -> None:
-    """Run molecule for each scenario.
-
-    :param molecule_scenario: The molecule scenario object
-    """
-    proc = molecule_scenario.test()
-    assert proc.returncode == 0
-```
-
-The `molecule_scenario` fixture parametrizes the `molecule` scenarios found within the collection and creates an individual `pytest` test for each which will be run during any `integration-*` environment.
-
-This approach provides the flexibility of running the `molecule` scenarios directly with `molecule`, `pytest` or `tox`. Additionally, presented as native `pytest` tests, the `molecule` scenarios should show in the `pytest` test tree in the user's IDE.
+Tox-ansible keeps its complete ansible-core matrix. Molecule's upstream support policy may cover fewer combinations, and unsupported combinations are not silently filtered.

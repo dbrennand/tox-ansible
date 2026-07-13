@@ -10,15 +10,16 @@ pip install tox-ansible
 
 ## Dependencies
 
-`tox-ansible` will install additional dependencies if necessary:
+`tox-ansible` will install additional dependencies where they are needed:
 
 - `tox` version 4.0 or greater.
-- `pytest-ansible` version 3.1.0 or greater.
-- `pytest`
-- `pytest-xdist`
+- `pytest-ansible`, `pytest`, and `pytest-xdist` for unit environments
 - `pytest-cov` when unit test coverage is enabled
+- `molecule` for integration environments
 - `pyyaml`
 
 Each generated test environment will also install:
 
 - `ansible-dev-environment` (ade) -- handles collection installation, ansible-core versioning, and Python dependency resolution.
+
+Molecule drivers are optional and are not inferred from scenario configuration. Declare drivers and other integration Python packages in `tests/integration/requirements.txt`, for example `molecule-plugins[docker]`.

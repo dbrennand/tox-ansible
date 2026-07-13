@@ -6,7 +6,7 @@
 
 Implemented as a `tox` plugin, `tox-ansible` provides a simple way to test Ansible content collections across multiple Python interpreters and Ansible versions.
 
-`tox-ansible` uses familiar python testing tools to perform the actual testing. It uses `tox` to create and manage the testing environments, `ansible-test sanity` to run the sanity tests, and `pytest` to run the unit and integration tests. This eliminated the black box nature of other approaches and allowed for more control over the testing process.
+`tox-ansible` uses `tox` to create and manage testing environments, `ansible-test sanity` to run sanity tests, `pytest` to run unit tests, and Molecule to run integration scenarios.
 
 When used on a local development system, each of the environments are left intact after a test run. This allows for easy debugging of failed tests for a given test type, python interpreter and Ansible version.
 
@@ -99,6 +99,14 @@ To review the specific commands and configuration for each of the integration, s
 tox config --ansible
 ```
 
+Integration environments run every scenario Molecule discovers under `extensions/molecule/`:
+
+```bash
+tox --ansible -e integration-py3.13-2.19
+```
+
+Arguments after `--` are passed to Molecule. For example, select one scenario with `-- -s default` or configure concurrency with `-- --workers 4`. Put Ansible collection dependencies in `tests/integration/requirements.yml` and Python packages such as Molecule drivers in `tests/integration/requirements.txt`.
+
 Generate specific GitHub action matrix as per scope mentioned with `--matrix-scope`:
 
 ```bash
@@ -157,7 +165,7 @@ See the [configuration guide] for details on overriding environment settings.
 
 Users of tox-ansible v1 should use the stable/1.x branch because the default branch is a rewrite of the plugin for tox 4.0+ which is not backward compatible with the old plugin.
 
-Version 1 of the plugin had native support for molecule. Please see the "Running molecule scenarios" above for an alternative approach.
+Current integration environments have first-class Molecule support. Version 1 users should still consult that branch's documentation because its configuration is not compatible with tox 4.
 
 ## License
 
