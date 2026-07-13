@@ -28,9 +28,11 @@ from tox_ansible.plugin import (
     Collection,
     _collection_install_path,
     _coverage_enabled,
+    _existing_molecule_config,
     _load_ansible_config,
     _load_pyproject_config,
     _write_coverage_config,
+    _write_molecule_config,
     add_ansible_matrix,
     conf_commands,
     conf_commands_pre,
@@ -697,14 +699,17 @@ def test_conf_commands_integration(tmp_path: Path) -> None:
         extra_envs=[],
     ).get_env("integration-py3.14-2.19")
 
+    generated_config = tmp_path / "generated.yml"
     result = conf_commands(
         env_conf=conf,
         collection=Collection(name="test", namespace="test", version="1.0.0"),
         test_type="integration",
         pos_args=None,
+        molecule_config=generated_config,
+        root_dir=tmp_path,
     )
     assert len(result) == 1
-    assert result[0] == "python3 -m pytest --ansible-unit-inject-only ./tests/integration"
+    assert result[0] == (f"python3 -m molecule --base-config {generated_config} test --all")
 
 
 def test_conf_commands_integration_ignores_coverage(tmp_path: Path) -> None:
@@ -723,15 +728,135 @@ def test_conf_commands_integration_ignores_coverage(tmp_path: Path) -> None:
         extra_envs=[],
     ).get_env("integration-py3.14-2.19")
 
+    generated_config = tmp_path / "generated.yml"
     result = conf_commands(
         env_conf=conf,
         collection=Collection(name="test", namespace="test", version="1.0.0"),
         test_type="integration",
         pos_args=None,
         coverage_config=tmp_path / "coverage.ini",
+        molecule_config=generated_config,
+        root_dir=tmp_path,
     )
 
-    assert result == ["python3 -m pytest --ansible-unit-inject-only ./tests/integration"]
+    assert result == [
+        f"python3 -m molecule --base-config {generated_config} test --all",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("pos_args", "expected_args"),
+    (
+        (("--workers", "4"), "--all --workers 4"),
+        (("--continue-on-failure",), "--all --continue-on-failure"),
+        (("-s", "default"), "-s default"),
+        (("--scenario-name", "default"), "--scenario-name default"),
+        (("--scenario-name=default",), "--scenario-name=default"),
+    ),
+)
+def test_conf_commands_integration_posargs(
+    tmp_path: Path,
+    pos_args: tuple[str, ...],
+    expected_args: str,
+) -> None:
+    """Test Molecule arguments retain order and scenario selectors replace --all."""
+    ini_file = tmp_path / "tox.ini"
+    ini_file.touch()
+    source = discover_source(ini_file, None)
+    conf = Config.make(
+        Parsed(work_dir=tmp_path, override=[], config_file=ini_file, root_dir=tmp_path),
+        pos_args=[],
+        source=source,
+        extra_envs=[],
+    ).get_env("integration-py3.14-2.19")
+    generated_config = tmp_path / "generated.yml"
+
+    result = conf_commands(
+        env_conf=conf,
+        collection=Collection(name="test", namespace="test", version="1.0.0"),
+        test_type="integration",
+        pos_args=pos_args,
+        molecule_config=generated_config,
+        root_dir=tmp_path,
+    )
+
+    assert result == [
+        f"python3 -m molecule --base-config {generated_config} test {expected_args}",
+    ]
+
+
+def test_write_molecule_config(tmp_path: Path) -> None:
+    """Test the generated Molecule config is environment-specific and minimal."""
+    ini_file = tmp_path / "tox.ini"
+    ini_file.touch()
+    source = discover_source(ini_file, None)
+    conf = Config.make(
+        Parsed(work_dir=tmp_path / ".tox", override=[], config_file=ini_file, root_dir=tmp_path),
+        pos_args=[],
+        source=source,
+        extra_envs=[],
+    ).get_env("integration-py3.14-2.19")
+    conf.add_config(
+        keys=["env_dir", "envdir"],
+        of_type=Path,
+        default=tmp_path / ".tox/integration-py3.14-2.19",
+        desc="",
+    )
+
+    result = _write_molecule_config(conf)
+
+    assert result == tmp_path / ".tox/.tox-ansible/molecule/integration-py3.14-2.19.yml"
+    assert result.read_text() == "---\nprerun: false\n"
+    assert not result.is_relative_to(tmp_path / "extensions")
+
+
+def test_existing_molecule_config_priority(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test repository, collection, then user Molecule config search priority."""
+    user_home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: user_home))
+    candidates = [
+        tmp_path / ".config/molecule/config.yml",
+        tmp_path / "extensions/molecule/config.yml",
+        user_home / ".config/molecule/config.yml",
+    ]
+    for candidate in reversed(candidates):
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        candidate.touch()
+        assert _existing_molecule_config(tmp_path) == candidate
+
+
+def test_conf_commands_integration_preserves_existing_base_config(tmp_path: Path) -> None:
+    """Test discovered base config precedes the generated Molecule config."""
+    existing_config = tmp_path / "extensions/molecule/config.yml"
+    existing_config.parent.mkdir(parents=True)
+    existing_config.touch()
+    ini_file = tmp_path / "tox.ini"
+    ini_file.touch()
+    source = discover_source(ini_file, None)
+    conf = Config.make(
+        Parsed(work_dir=tmp_path, override=[], config_file=ini_file, root_dir=tmp_path),
+        pos_args=[],
+        source=source,
+        extra_envs=[],
+    ).get_env("integration-py3.14-2.19")
+    generated_config = tmp_path / "generated.yml"
+
+    result = conf_commands(
+        env_conf=conf,
+        collection=Collection(name="test", namespace="test", version="1.0.0"),
+        test_type="integration",
+        pos_args=None,
+        molecule_config=generated_config,
+        root_dir=tmp_path,
+    )
+
+    assert result == [
+        "python3 -m molecule "
+        f"--base-config {existing_config} --base-config {generated_config} test --all",
+    ]
 
 
 def test_conf_commands_invalid(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
@@ -831,6 +956,22 @@ def test_conf_deps_integration(tmp_path: Path) -> None:
         result = conf_deps(test_type="integration")
         assert "ansible-dev-environment>=26.2.0" in result
         assert "molecule>=26.4.0" in result
+        assert "ansible-compat>=25.11.0" in result
+        assert "pytest>=7.4.3" not in result
+        assert "pytest-xdist>=3.4.0" not in result
+        assert "pytest-ansible>=v4.1.1" not in result
+
+
+def test_conf_deps_integration_python_requirements(tmp_path: Path) -> None:
+    """Test integration Python requirements include optional Molecule drivers."""
+    requirements = tmp_path / "tests/integration/requirements.txt"
+    requirements.parent.mkdir(parents=True)
+    requirements.write_text("molecule-plugins[docker]\n")
+
+    with working_directory(tmp_path):
+        result = conf_deps(test_type="integration")
+
+    assert "molecule-plugins[docker]" in result
 
 
 def test_conf_deps_sanity() -> None:
@@ -881,6 +1022,25 @@ def test_conf_setenv_collections_path(tmp_path: Path) -> None:
     result = conf_setenv(env_conf=conf, test_type="unit")
     assert "ANSIBLE_COLLECTIONS_PATH=." in result
     assert "site-packages" not in result
+
+
+def test_conf_setenv_integration(tmp_path: Path) -> None:
+    """Test Molecule controls the Ansible collection environment."""
+    ini_file = tmp_path / "tox.ini"
+    ini_file.touch()
+    source = discover_source(ini_file, None)
+    conf = Config.make(
+        Parsed(work_dir=tmp_path, override=[], config_file=ini_file, root_dir=tmp_path),
+        pos_args=[],
+        source=source,
+        extra_envs=[],
+    ).get_env("integration-py3.13-2.19")
+    conf.add_config(keys=["env_dir", "envdir"], of_type=Path, default=tmp_path, desc="")
+
+    result = conf_setenv(env_conf=conf, test_type="integration")
+
+    assert "ANSIBLE_COLLECTIONS_PATH" not in result
+    assert "XDG_CACHE_HOME" in result
 
 
 def test_conf_setenv_galaxy(tmp_path: Path) -> None:

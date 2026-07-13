@@ -66,9 +66,23 @@ def test_ade_workflow_config(
         assert "ade" in config["allowlist_externals"], (
             f"{env_name}: allowlist_externals should contain 'ade'"
         )
-        assert "ANSIBLE_COLLECTIONS_PATH=." in config["set_env"], (
-            f"{env_name}: set_env should contain 'ANSIBLE_COLLECTIONS_PATH=.'"
-        )
+        if "integration" in env_name:
+            assert "ANSIBLE_COLLECTIONS_PATH" not in config["set_env"]
+            assert "MOLECULE_GLOB" not in config["set_env"]
+            assert "python3 -m molecule" in config["commands"]
+            assert "test --all" in config["commands"]
+            assert "molecule>=26.4.0" in config["deps"]
+            assert "pytest-ansible>=v4.1.1" not in config["deps"]
+            generated_config = (
+                module_fixture_dir
+                / ".tox/.tox-ansible/molecule"
+                / f"{env_name.removeprefix('testenv:')}.yml"
+            )
+            assert generated_config.read_text() == "---\nprerun: false\n"
+        else:
+            assert "ANSIBLE_COLLECTIONS_PATH=." in config["set_env"], (
+                f"{env_name}: set_env should contain 'ANSIBLE_COLLECTIONS_PATH=.'"
+            )
 
 
 def test_ade_workflow_collection_requirements(
@@ -162,6 +176,41 @@ def test_ade_workflow_coverage_config(
     assert "pytest-cov" not in integration["deps"]
     assert "--cov" not in integration["commands"]
     assert not (collection_dir / ".coveragerc").exists()
+
+
+def test_ade_workflow_molecule_config_and_dependencies(
+    module_fixture_dir: Path,
+    tmp_path: Path,
+    tox_bin: Path,
+) -> None:
+    """Validate existing Molecule config and Python requirements are preserved."""
+    collection_dir = tmp_path / "collection"
+    shutil.copytree(module_fixture_dir, collection_dir)
+    base_config = collection_dir / "extensions/molecule/config.yml"
+    base_config.parent.mkdir(parents=True)
+    base_config.write_text("---\nlog: true\n")
+    python_requirements = collection_dir / "tests/integration/requirements.txt"
+    python_requirements.parent.mkdir(parents=True, exist_ok=True)
+    python_requirements.write_text("molecule-plugins[docker]\n")
+
+    proc = run(
+        f"{tox_bin} config --ansible --root {collection_dir} --conf tox-ansible.ini "
+        "-e integration-py3.13-2.19 -k commands commands_pre deps set_env -qq",
+        cwd=collection_dir,
+        check=True,
+        timeout=10,
+    )
+    cfg_parser = ConfigParser()
+    cfg_parser.read_string(proc.stdout)
+    integration = cfg_parser["testenv:integration-py3.13-2.19"]
+    generated_config = collection_dir / ".tox/.tox-ansible/molecule/integration-py3.13-2.19.yml"
+
+    assert integration["commands"].index(str(base_config)) < integration["commands"].index(
+        str(generated_config),
+    )
+    assert "molecule-plugins[docker]" in integration["deps"]
+    assert "ade install -r tests/requirements.yml" in integration["commands_pre"]
+    assert "ANSIBLE_COLLECTIONS_PATH" not in integration["set_env"]
 
 
 @pytest.mark.slow

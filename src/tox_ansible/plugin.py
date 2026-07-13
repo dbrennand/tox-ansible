@@ -55,14 +55,13 @@ galaxy
 # release branch, is not supported.
 # https://docs.ansible.com/projects/ansible/latest/reference_appendices/release_and_maintenance.html#ansible-core-support-matrix
 
-# Without the minimal pytest-ansible condition, installation may fail in some
-# cases (pip, uv).
-OUR_DEPS = [
+UNIT_DEPS = [
     "pytest>=7.4.3",  # Oct 2023
     "pytest-xdist>=3.4.0",  # Nov 2023
     "pytest-ansible>=v4.1.1",  # latest version still supporting py39 (Oct 2023)
-    "ansible-compat>=25.11.0",  # Nov 2025
 ]
+ANSIBLE_COMPAT_DEP = "ansible-compat>=25.11.0"  # Nov 2025
+MOLECULE_DEP = "molecule>=26.4.0"
 COVERAGE_DEPS = [
     "coverage>=7.0.0",  # Dec 2022
     "pytest-cov>=4.1.0",  # May 2023
@@ -297,6 +296,9 @@ def tox_add_env_config(env_conf: EnvConfigSet, state: State) -> None:
         if coverage_enabled
         else None
     )
+    molecule_config = (
+        _write_molecule_config(env_conf=env_conf) if test_type == "integration" else None
+    )
 
     conf = AnsibleTestConf(
         allowlist_externals=ALLOWED_EXTERNALS,
@@ -313,6 +315,8 @@ def tox_add_env_config(env_conf: EnvConfigSet, state: State) -> None:
             pos_args=pos_args,
             test_type=test_type,
             coverage_config=coverage_config,
+            molecule_config=molecule_config,
+            root_dir=state.conf.src_path.parent.resolve(),
         ),
         description=desc_for_env(env_conf.name),
         deps=conf_deps(test_type=test_type, coverage_enabled=coverage_enabled),
@@ -664,12 +668,44 @@ def _write_coverage_config(
     return coverage_config
 
 
-def conf_commands(
+def _write_molecule_config(env_conf: EnvConfigSet) -> Path:
+    """Write the tox-ansible-owned Molecule defaults for an environment."""
+    molecule_dir = Path(env_conf["env_dir"]).parent / ".tox-ansible" / "molecule"
+    molecule_dir.mkdir(parents=True, exist_ok=True)
+    molecule_config = molecule_dir / f"{env_conf.name}.yml"
+    molecule_config.write_text("---\nprerun: false\n", encoding="utf-8")
+    return molecule_config
+
+
+def _existing_molecule_config(root_dir: Path) -> Path | None:
+    """Return Molecule's normally discovered base config in priority order."""
+    candidates = (
+        root_dir / ".config" / "molecule" / "config.yml",
+        root_dir / "extensions" / "molecule" / "config.yml",
+        Path.home() / ".config" / "molecule" / "config.yml",
+    )
+    return next((candidate for candidate in candidates if candidate.is_file()), None)
+
+
+def _molecule_selects_scenario(pos_args: tuple[str, ...] | None) -> bool:
+    """Return whether positional arguments contain a Molecule scenario selector."""
+    return bool(
+        pos_args
+        and any(
+            arg in {"-s", "--scenario-name"} or arg.startswith("--scenario-name=")
+            for arg in pos_args
+        )
+    )
+
+
+def conf_commands(  # noqa: PLR0913
     collection: Collection,
     env_conf: EnvConfigSet,
     pos_args: tuple[str, ...] | None,
     test_type: str,
     coverage_config: Path | None = None,
+    molecule_config: Path | None = None,
+    root_dir: Path | None = None,
 ) -> list[str]:
     """Build the commands for the tox environment.
 
@@ -679,14 +715,22 @@ def conf_commands(
         pos_args: Positional arguments passed to tox command.
         test_type: The test type, either "integration", "unit", or "sanity".
         coverage_config: The generated coverage configuration path.
+        molecule_config: The generated Molecule base configuration path.
+        root_dir: The collection root used for Molecule base config discovery.
 
     Returns:
         The commands to run.
     """
-    if test_type in ["integration", "unit"]:
-        return conf_commands_for_integration_unit(
+    if test_type == "integration":
+        generated_config = molecule_config or _write_molecule_config(env_conf)
+        return conf_commands_for_integration(
             pos_args=pos_args,
-            test_type=test_type,
+            generated_config=generated_config,
+            root_dir=root_dir or Path.cwd(),
+        )
+    if test_type == "unit":
+        return conf_commands_for_unit(
+            pos_args=pos_args,
             coverage_config=coverage_config,
         )
     if test_type == "sanity":
@@ -705,33 +749,56 @@ def conf_commands(
     sys.exit(1)
 
 
-def conf_commands_for_integration_unit(
+def conf_commands_for_unit(
     pos_args: tuple[str, ...] | None,
-    test_type: str,
     coverage_config: Path | None = None,
 ) -> list[str]:
-    """Build the commands for integration and unit tests.
+    """Build the pytest command for unit tests.
 
     Args:
         pos_args: Positional arguments passed to tox command.
-        test_type: The test type, either "integration" or "unit".
         coverage_config: The generated coverage configuration path.
 
     Returns:
         The commands to run.
     """
     args = f" {' '.join(pos_args)} " if pos_args else " "
-    coverage_args = (
-        f" --cov --cov-config={coverage_config}"
-        if test_type == "unit" and coverage_config is not None
-        else ""
-    )
+    coverage_args = f" --cov --cov-config={coverage_config}" if coverage_config is not None else ""
 
     # Use pytest ansible unit inject only to inject the collection path
     # into the collection finder
     command = (
-        f"python3 -m pytest{coverage_args} "
-        f"--ansible-unit-inject-only{args}{Path()}/tests/{test_type}"
+        f"python3 -m pytest{coverage_args} --ansible-unit-inject-only{args}{Path()}/tests/unit"
+    )
+    return [command]
+
+
+def conf_commands_for_integration(
+    pos_args: tuple[str, ...] | None,
+    generated_config: Path,
+    root_dir: Path,
+) -> list[str]:
+    """Build the direct Molecule command for integration tests.
+
+    Args:
+        pos_args: Positional arguments passed to tox command.
+        generated_config: Tox-ansible's generated Molecule base config.
+        root_dir: The collection root used for base config discovery.
+
+    Returns:
+        The command to run.
+    """
+    config_args: list[str] = []
+    existing_config = _existing_molecule_config(root_dir)
+    if existing_config is not None:
+        config_args.extend(("--base-config", str(existing_config)))
+    config_args.extend(("--base-config", str(generated_config)))
+
+    test_args = list(pos_args or ())
+    if not _molecule_selects_scenario(pos_args):
+        test_args.insert(0, "--all")
+    command = " ".join(
+        ("python3", "-m", "molecule", *config_args, "test", *test_args),
     )
     return [command]
 
@@ -903,11 +970,13 @@ def _test_deps(test_type: str, *, coverage_enabled: bool) -> list[str]:
     Returns:
         The dependencies as a list of requirement strings.
     """
-    deps = list(OUR_DEPS)
+    deps = [ANSIBLE_COMPAT_DEP]
+    if test_type == "unit":
+        deps.extend(UNIT_DEPS)
     if test_type == "unit" and coverage_enabled:
         deps.extend(COVERAGE_DEPS)
     if test_type == "integration":
-        deps.append("molecule>=26.4.0")
+        deps.append(MOLECULE_DEP)
     cwd = Path.cwd()
     for req_file in PYTHON_DEPENDENCY_FILES:
         try:
@@ -965,7 +1034,7 @@ def conf_setenv(env_conf: EnvConfigSet, test_type: str) -> str:
         f"XDG_CACHE_HOME={env_conf['env_dir']}/.cache",
     ]
 
-    if test_type != "galaxy":
+    if test_type not in ("galaxy", "integration"):
         setenv.insert(0, "ANSIBLE_COLLECTIONS_PATH=.")
 
     # due to the ceilings used by galaxy-importer, use of constraints will
