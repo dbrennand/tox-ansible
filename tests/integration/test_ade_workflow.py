@@ -194,7 +194,7 @@ def test_ade_workflow_molecule_config_and_dependencies(
     collection_dir = tmp_path / "collection"
     shutil.copytree(module_fixture_dir, collection_dir)
     base_config = collection_dir / "extensions/molecule/config.yml"
-    base_config.parent.mkdir(parents=True)
+    base_config.parent.mkdir(parents=True, exist_ok=True)
     base_config.write_text("---\nlog: true\n")
     python_requirements = collection_dir / "tests/integration/requirements.txt"
     python_requirements.parent.mkdir(parents=True, exist_ok=True)
