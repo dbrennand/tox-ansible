@@ -1,4 +1,4 @@
-# cspell:ignore envlist
+# cspell:ignore envlist nprerun
 """tox plugin to emit a github matrix."""
 
 from __future__ import annotations
@@ -669,7 +669,14 @@ def _write_coverage_config(
 
 
 def _write_molecule_config(env_conf: EnvConfigSet) -> Path:
-    """Write the tox-ansible-owned Molecule defaults for an environment."""
+    """Write the tox-ansible-owned Molecule defaults for an environment.
+
+    Args:
+        env_conf: The tox environment configuration object.
+
+    Returns:
+        The generated Molecule configuration path.
+    """
     molecule_dir = Path(env_conf["env_dir"]).parent / ".tox-ansible" / "molecule"
     molecule_dir.mkdir(parents=True, exist_ok=True)
     molecule_config = molecule_dir / f"{env_conf.name}.yml"
@@ -678,7 +685,14 @@ def _write_molecule_config(env_conf: EnvConfigSet) -> Path:
 
 
 def _existing_molecule_config(root_dir: Path) -> Path | None:
-    """Return Molecule's normally discovered base config in priority order."""
+    """Return Molecule's normally discovered base config in priority order.
+
+    Args:
+        root_dir: The collection root directory.
+
+    Returns:
+        The first discovered configuration path, if one exists.
+    """
     candidates = (
         root_dir / ".config" / "molecule" / "config.yml",
         root_dir / "extensions" / "molecule" / "config.yml",
@@ -688,7 +702,14 @@ def _existing_molecule_config(root_dir: Path) -> Path | None:
 
 
 def _molecule_selects_scenario(pos_args: tuple[str, ...] | None) -> bool:
-    """Return whether positional arguments contain a Molecule scenario selector."""
+    """Return whether positional arguments contain a Molecule scenario selector.
+
+    Args:
+        pos_args: Positional arguments passed to tox.
+
+    Returns:
+        Whether the arguments select one or more scenarios.
+    """
     return bool(
         pos_args
         and any(
@@ -703,6 +724,7 @@ def conf_commands(  # noqa: PLR0913
     env_conf: EnvConfigSet,
     pos_args: tuple[str, ...] | None,
     test_type: str,
+    *,
     coverage_config: Path | None = None,
     molecule_config: Path | None = None,
     root_dir: Path | None = None,

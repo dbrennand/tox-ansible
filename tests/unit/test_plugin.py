@@ -1,4 +1,6 @@
 """Unit plugin tests."""
+# cspell:ignore nprerun posargs
+# pylint: disable=too-many-lines
 
 from __future__ import annotations
 
@@ -759,7 +761,13 @@ def test_conf_commands_integration_posargs(
     pos_args: tuple[str, ...],
     expected_args: str,
 ) -> None:
-    """Test Molecule arguments retain order and scenario selectors replace --all."""
+    """Test Molecule arguments retain order and scenario selectors replace --all.
+
+    Args:
+        tmp_path: Pytest fixture.
+        pos_args: Arguments to forward to Molecule.
+        expected_args: Expected rendered Molecule arguments.
+    """
     ini_file = tmp_path / "tox.ini"
     ini_file.touch()
     source = discover_source(ini_file, None)
@@ -786,7 +794,11 @@ def test_conf_commands_integration_posargs(
 
 
 def test_write_molecule_config(tmp_path: Path) -> None:
-    """Test the generated Molecule config is environment-specific and minimal."""
+    """Test the generated Molecule config is environment-specific and minimal.
+
+    Args:
+        tmp_path: Pytest fixture.
+    """
     ini_file = tmp_path / "tox.ini"
     ini_file.touch()
     source = discover_source(ini_file, None)
@@ -814,7 +826,12 @@ def test_existing_molecule_config_priority(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test repository, collection, then user Molecule config search priority."""
+    """Test repository, collection, then user Molecule config search priority.
+
+    Args:
+        tmp_path: Pytest fixture.
+        monkeypatch: Pytest fixture for patching the user home directory.
+    """
     user_home = tmp_path / "home"
     monkeypatch.setattr(Path, "home", classmethod(lambda _cls: user_home))
     candidates = [
@@ -829,7 +846,11 @@ def test_existing_molecule_config_priority(
 
 
 def test_conf_commands_integration_preserves_existing_base_config(tmp_path: Path) -> None:
-    """Test discovered base config precedes the generated Molecule config."""
+    """Test discovered base config precedes the generated Molecule config.
+
+    Args:
+        tmp_path: Pytest fixture.
+    """
     existing_config = tmp_path / "extensions/molecule/config.yml"
     existing_config.parent.mkdir(parents=True)
     existing_config.touch()
@@ -963,7 +984,11 @@ def test_conf_deps_integration(tmp_path: Path) -> None:
 
 
 def test_conf_deps_integration_python_requirements(tmp_path: Path) -> None:
-    """Test integration Python requirements include optional Molecule drivers."""
+    """Test integration Python requirements include optional Molecule drivers.
+
+    Args:
+        tmp_path: Pytest fixture.
+    """
     requirements = tmp_path / "tests/integration/requirements.txt"
     requirements.parent.mkdir(parents=True)
     requirements.write_text("molecule-plugins[docker]\n")
@@ -1025,7 +1050,11 @@ def test_conf_setenv_collections_path(tmp_path: Path) -> None:
 
 
 def test_conf_setenv_integration(tmp_path: Path) -> None:
-    """Test Molecule controls the Ansible collection environment."""
+    """Test Molecule controls the Ansible collection environment.
+
+    Args:
+        tmp_path: Pytest fixture.
+    """
     ini_file = tmp_path / "tox.ini"
     ini_file.touch()
     source = discover_source(ini_file, None)

@@ -1,4 +1,5 @@
 """Tests for the ade-based collection install workflow."""
+# cspell:ignore nprerun
 
 from __future__ import annotations
 
@@ -183,7 +184,13 @@ def test_ade_workflow_molecule_config_and_dependencies(
     tmp_path: Path,
     tox_bin: Path,
 ) -> None:
-    """Validate existing Molecule config and Python requirements are preserved."""
+    """Validate existing Molecule config and Python requirements are preserved.
+
+    Args:
+        module_fixture_dir: Pytest fixture for the module fixture directory.
+        tmp_path: Pytest fixture for a temporary directory.
+        tox_bin: Pytest fixture for the tox binary.
+    """
     collection_dir = tmp_path / "collection"
     shutil.copytree(module_fixture_dir, collection_dir)
     base_config = collection_dir / "extensions/molecule/config.yml"
@@ -284,7 +291,12 @@ def test_molecule_workflow_e2e(
     module_fixture_dir: Path,
     tmp_path: Path,
 ) -> None:
-    """Run Molecule directly through a generated integration environment."""
+    """Run Molecule directly through a generated integration environment.
+
+    Args:
+        module_fixture_dir: Pytest fixture for the module fixture directory.
+        tmp_path: Pytest fixture for a temporary directory.
+    """
     repo_root = Path(__file__).resolve().parents[2]
     collection_dir = tmp_path / "collection"
     shutil.copytree(module_fixture_dir, collection_dir)

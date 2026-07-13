@@ -119,6 +119,8 @@ A list of dynamically generated Ansible environments will be displayed specifica
 
     See the [Configuration](configuration.md) page for details on both approaches.
 
+<!-- cspell:ignore prerun -->
+
 ## Passing command line arguments to test runners
 
 Arguments after `--` are forwarded to the environment's runner: `ansible-test` for `sanity-*`, pytest for `unit-*`, and Molecule for `integration-*`.
